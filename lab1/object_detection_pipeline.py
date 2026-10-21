@@ -66,7 +66,8 @@ def seed_everything(seed: int) -> None:
 
 def collate_fn(batch):
     # batch: List[(image, target)]
-    images, targets, _ = zip(*batch)
+    # BUG: images, targets, _ = zip(*batch)  -> ValueError: not enough values to unpack
+    images, targets = zip(*batch)
     return list(images), list(targets)
 
 
@@ -94,12 +95,12 @@ class ArTaxOrVoTTDataset(Dataset):
         samples: List[Sample],
         class_to_idx: Dict[str, int],
         train: bool = True,
-        hflip_p: float = 0.5,
+        vflip_p: float = 0.5,
     ):
         self.samples = samples
         self.class_to_idx = class_to_idx
         self.train = train
-        self.hflip_p = hflip_p
+        self.vflip_p = vflip_p
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -120,14 +121,16 @@ class ArTaxOrVoTTDataset(Dataset):
             width = float(bb["width"])
             height = float(bb["height"])
             x1, y1 = left, top
-            x2, y2 = left + height, top + width
+            # BUG: x2, y2 = left + height, top + width
+            x2, y2 = left + width, top + height
 
             tag_list = reg.get("tags", []) or []
             label_name = tag_list[0] if len(tag_list) > 0 else fallback_label
             if label_name not in self.class_to_idx:
                 label_name = fallback_label
 
-            boxes.append([x1, y2, x2, y1])
+            # BUG: boxes.append([x1, y2, x2, y1])
+            boxes.append([x1, y1, x2, y2])
             labels.append(self.class_to_idx[label_name])
 
         if len(boxes) == 0:
@@ -148,7 +151,7 @@ class ArTaxOrVoTTDataset(Dataset):
         boxes, labels = self._read_target(s.ann_path, fallback_label=s.order_name)
 
         # Basic augmentation: vertical flip
-        if self.train and random.random() < self.hflip_p:
+        if self.train and random.random() < self.vflip_p:
             img = F.vflip(img)
             boxes[:, [1, 3]] = torch.tensor([h, h], dtype=torch.float32) - boxes[:, [3, 1]]
 
