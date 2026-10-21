@@ -10,6 +10,26 @@
 #       jupytext_version: 1.19.5
 # ---
 
+# %% [markdown]
+# # Object detection pipeline (ArTaxOr)
+#
+# ## Colab setup
+# Use a GPU runtime (Runtime → Change runtime type → T4 GPU). torch/torchvision come preinstalled.
+
+# %%
+# !pip install -q lightning torchmetrics pycocotools kagglehub
+
+# %% [markdown]
+# Download the dataset (~12 GB) to the runtime's local disk. Public dataset, so no Kaggle login should be needed;
+# if kagglehub asks for credentials, add `KAGGLE_USERNAME` / `KAGGLE_KEY` in Colab secrets.
+
+# %%
+import kagglehub
+
+DATA_DIR = kagglehub.dataset_download("mistag/arthropod-taxonomy-orders-object-detection-dataset")
+print(DATA_DIR)
+# !ls {DATA_DIR}
+
 # %%
 import argparse
 import json
@@ -295,17 +315,7 @@ class FasterRCNNLit(pl.LightningModule):
 
 
 # %%
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", type=str, required=True, help="Path containing ArTaxOr/...")
-    parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--val_split", type=float, default=0.1)
-    parser.add_argument("--max_epochs", type=int, default=20)
-    parser.add_argument("--lr", type=float, default=1e-6)
-    parser.add_argument("--seed", type=int, default=42)
-    args = parser.parse_args()
-
+def main(args: argparse.Namespace):
     seed_everything(args.seed)
 
     dm = ArTaxOrDataModule(
@@ -334,6 +344,20 @@ def main():
     print("Best checkpoint:", ckpt.best_model_path)
 
 
+# %% [markdown]
+# ## Config
+# Replaces `argparse` (`parse_args()` fails inside a notebook kernel). Same defaults as the original CLI.
+
 # %%
-if __name__ == "__main__":
-    main()
+args = argparse.Namespace(
+    data_dir=DATA_DIR,  # Path containing ArTaxOr/...
+    batch_size=4,
+    num_workers=4,
+    val_split=0.1,
+    max_epochs=20,
+    lr=1e-6,
+    seed=42,
+)
+
+# %%
+main(args)
