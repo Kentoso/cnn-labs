@@ -182,12 +182,46 @@ show([x_test[:16], reconstruct(x_test[:16])], ['original', 'reconstructed'])
 
 # %%
 mu_test = encode(x_test)
-emb = umap.UMAP(random_state=0).fit_transform(mu_test.cpu().numpy())
+reducer = umap.UMAP(random_state=0)
+emb = reducer.fit_transform(mu_test.cpu().numpy())
 
 plt.figure(figsize=(7, 6))
 plt.scatter(emb[:, 0], emb[:, 1], c=y_test.cpu(), cmap='tab10', s=2)
 plt.colorbar(ticks=range(10))
 plt.title('UMAP of test-set μ')
+plt.show()
+
+# %% [markdown]
+# ### Interpolation between digit means
+# Take the mean μ of each digit class, then 4 evenly spaced points on the straight line between the means of
+# d and d + 1 in the 16-dim latent space. Each point is decoded into an image and placed on the UMAP with
+# `reducer.transform`. The path is straight in latent space but bends in 2D, because UMAP is non-linear.
+# Stars mark the class means and dots the 4 intermediate points.
+
+# %%
+means = torch.stack([mu_test[y_test == d].mean(0) for d in range(10)])
+t = torch.linspace(0, 1, 6, device=device)[:, None]  # mean, 4 points, mean
+
+fig, axes = plt.subplots(9, 7, figsize=(14, 22), gridspec_kw={'width_ratios': [2.5] + [1] * 6})
+for d in range(9):
+    z = (1 - t) * means[d] + t * means[d + 1]
+    with torch.no_grad():
+        imgs = vae.dec(z).cpu()
+    path = reducer.transform(z.cpu().numpy())
+
+    ax = axes[d, 0]
+    ax.scatter(emb[:, 0], emb[:, 1], c=y_test.cpu(), cmap='tab10', s=1, alpha=0.3)
+    ax.plot(path[:, 0], path[:, 1], 'k-', lw=1)
+    ax.scatter(path[1:-1, 0], path[1:-1, 1], c='k', s=15, zorder=3)
+    ax.scatter(path[[0, -1], 0], path[[0, -1], 1], c='k', marker='*', s=120, zorder=3)
+    ax.set_title(f'{d} → {d + 1}', loc='left')
+    ax.axis('off')
+
+    for ax, img, ti in zip(axes[d, 1:], imgs, t.flatten().tolist()):
+        ax.imshow(img[0], cmap='gray')
+        ax.set_title(f't = {ti:.1f}', fontsize=9)
+        ax.axis('off')
+plt.tight_layout()
 plt.show()
 
 # %% [markdown]
