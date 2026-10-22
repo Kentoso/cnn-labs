@@ -196,7 +196,19 @@ plt.show()
 # - Which are lost (thin strokes, sharp edges, small gaps or loops, unusual writing styles)?
 # - Are any digits reconstructed as a *different* digit? Do those cases sit between clusters in the UMAP?
 #
-# **TODO:** conclusions after the run.
+# **Training.** The reconstruction loss falls from 150 to 75 over 20 epochs. KL rises to ~24 in the first
+# epochs and then stays flat, so the latent code carries information (no posterior collapse).
+#
+# **What survives.** The digit's identity, overall shape, slant, stroke thickness and position are preserved.
+# All 16 shown digits are still recognisable as the same class.
+#
+# **What is lost.** High-frequency detail: edges are blurred and fine strokes fade (thin parts of the 2 and 4).
+# Atypical writing gets pulled toward a "typical" digit: the 5 at index 8 turns into a blob, and the
+# hooked 9 at index 7 loses its shape. With 16 numbers per image and a KL penalty, the VAE keeps
+# what is common across the dataset and drops what is individual.
+#
+# **Latent space.** 0, 1, 2, 6 and 7 form clean, separate clusters. 3/5/8 touch, and so do 4/9, which are the
+# classic MNIST confusions. These are the regions where a reconstruction can drift to a neighbouring class.
 
 # %% [markdown]
 # ## 2. Classifiers
@@ -251,7 +263,20 @@ pd.Series({
 #   the VAE throws away?
 # - How does a 16-dim latent compare to the full 784-pixel image as classifier input?
 #
-# **TODO:** conclusions after the run.
+# | Classifier | Test accuracy |
+# |---|---|
+# | Baseline (original images) | 98.68% |
+# | Reconstructed (VAE outputs) | 97.72% |
+# | Latent (μ, 16 dims) | 96.57% |
+#
+# Training on reconstructions costs about 1 point. The reconstructions keep enough class information to
+# learn from, but the blurred strokes and the "typical-ised" odd digits remove some cues the Baseline uses.
+# The Reconstructed classifier also sees slightly different inputs at test time (sharp originals vs the
+# blurry images it was trained on), and it still generalises well.
+#
+# The Latent classifier gets 96.6% from just 16 numbers, 49× fewer than the 784 pixels. The VAE was trained
+# without labels, yet its latent space already separates the classes well, as the UMAP plot shows.
+# The remaining errors come from the overlapping 3/5/8 and 4/9 regions.
 
 # %% [markdown]
 # ## 3. Input noise
@@ -293,4 +318,32 @@ for sigma, noisy, denoised in examples:
 # - How does the Latent classifier degrade compared to the image classifiers?
 # - At which σ does the VAE start reconstructing the wrong digit?
 #
-# **TODO:** conclusions after the run.
+# | σ | Baseline / noisy | Baseline / denoised | Reconstructed / noisy | Reconstructed / denoised | Latent |
+# |---|---|---|---|---|---|
+# | 0 | 98.7 | 96.9 | 97.7 | 97.2 | 96.6 |
+# | 0.1 | 98.4 | 91.8 | 97.7 | 92.1 | 87.9 |
+# | 0.2 | 97.5 | 49.2 | 96.8 | 49.2 | 45.7 |
+# | 0.3 | 94.7 | 30.6 | 94.0 | 28.8 | 25.6 |
+#
+# **The VAE does not denoise. It makes things worse.** Both CNNs are robust to the noise on its own
+# (still ~94% at σ = 0.3). Passing the noisy image through the VAE first drops accuracy to 92% at σ = 0.1,
+# 49% at σ = 0.2 and ~30% at σ = 0.3. In the example grids, the "denoised" images are clean, but they are
+# often the *wrong digit*. From σ = 0.2 most inputs come out as the same blurry 8/3-like shape,
+# whatever the original digit was.
+#
+# **Why.** Clamping to [0, 1] makes the noise one-sided on the black background (~80% of the pixels):
+# a background pixel becomes max(0, N(0, σ²)), with mean σ/√(2π) ≈ 0.04 / 0.08 / 0.12. To the encoder,
+# the image becomes globally brighter with thousands of active pixels, which it never saw during training.
+# That input is off the training distribution, and the encoder maps it to a generic region of the latent
+# space that decodes to a "mean digit". The Latent column confirms the encoder is the problem:
+# classifying μ(noisy) directly fails just as badly (25.6% at σ = 0.3), so the decoder is not to blame.
+#
+# **Baseline vs Reconstructed.** On the raw noisy images the two behave almost the same; Baseline is even
+# slightly better. Training on smooth reconstructions does not make the classifier noise-robust.
+# On the denoised images the two are also equal, since by then the VAE has already decided which digit it is.
+#
+# **Conclusion.** A VAE trained only on clean images does not learn to remove noise. It keeps outputs on the
+# clean-digit manifold, but it projects noisy inputs onto the *wrong place* on that manifold. The clean
+# outputs look convincing but carry the wrong label, which is worse than leaving the noise in. Actual
+# denoising needs noise during training: feed I + N to the encoder and reconstruct the clean I
+# (a denoising VAE).
